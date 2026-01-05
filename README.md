@@ -48,7 +48,7 @@ graph TD
 
 ```bash
 # 1. Clone & Setup Utils
-git clone https://github.com/yourusername/paper-radar.git
+git clone https://github.com/Adarshh9/paper-radar.git
 cd paper-radar
 
 # 2. Configure Environment
