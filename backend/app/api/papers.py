@@ -24,7 +24,6 @@ router = APIRouter()
 
 
 def paper_to_list_item(paper: Paper) -> PaperListItem:
-    """Convert Paper model to PaperListItem schema."""
     return PaperListItem(
         id=paper.id,
         arxiv_id=paper.arxiv_id,
@@ -45,27 +44,12 @@ def paper_to_list_item(paper: Paper) -> PaperListItem:
 
 @router.get("", response_model=PaperListResponse)
 async def list_papers(
-    category: Optional[str] = Query(None, description="Filter by category (e.g., cs.AI)"),
-    date_from: Optional[date] = Query(None, description="Filter papers from this date"),
-    date_to: Optional[date] = Query(None, description="Filter papers until this date"),
-    sort_by: str = Query("rank_score", description="Sort by: rank_score, published_date, citations"),
-    has_implementation: Optional[bool] = Query(None, description="Filter papers with implementations"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
-):
-    """
-    List papers with filtering, sorting, and pagination.
-    """
     # Build query
     query = db.query(Paper).options(
         joinedload(Paper.metrics),
         joinedload(Paper.summary),
         joinedload(Paper.implementations),
     )
-    
-    # Apply filters
     if category:
         query = query.filter(
             or_(
@@ -117,13 +101,6 @@ async def list_papers(
 
 @router.get("/trending", response_model=List[PaperListItem])
 async def get_trending_papers(
-    timeframe: str = Query("week", description="Timeframe: day, week, month"),
-    limit: int = Query(20, ge=1, le=50, description="Number of papers"),
-    db: Session = Depends(get_db),
-):
-    """
-    Get trending papers based on ranking score and recency.
-    """
     # Calculate date threshold
     days_map = {"day": 1, "week": 7, "month": 30}
     days = days_map.get(timeframe, 7)
@@ -136,7 +113,6 @@ async def get_trending_papers(
         return cached
     
     try:
-        # First get paper IDs with their scores - rely on rank_score which handles recency decay
         paper_ids_query = (
             db.query(Paper.id)
             .outerjoin(PaperMetrics)
@@ -153,7 +129,6 @@ async def get_trending_papers(
         if not paper_ids:
             return []
         
-        # Then fetch full paper data with eager loading
         papers = (
             db.query(Paper)
             .options(
@@ -185,9 +160,6 @@ async def get_trending_papers(
 
 @router.get("/categories")
 async def get_categories(db: Session = Depends(get_db)):
-    """
-    Get available categories with paper counts.
-    """
     # Check cache
     cache_key = "categories:list"
     cached = cache.get(cache_key)
@@ -218,12 +190,6 @@ async def get_categories(db: Session = Depends(get_db)):
 
 @router.get("/{paper_id}", response_model=PaperDetail)
 async def get_paper_detail(
-    paper_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """
-    Get full paper details including metrics, summary, and implementations.
-    """
     # Check cache
     cache_key = f"paper:{paper_id}"
     cached = cache.get(cache_key)
@@ -256,15 +222,6 @@ async def get_paper_detail(
 
 @router.post("/search", response_model=PaperListResponse)
 async def search_papers(
-    request: PaperSearchRequest,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-):
-    """
-    Search papers by keyword with filters.
-    Uses PostgreSQL full-text search on title and abstract.
-    """
     # Build search query
     search_term = f"%{request.query}%"
     

@@ -18,10 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_recency_score(published_date: date, max_days: int = 90) -> float:
-    """
-    Calculate recency score (0-1).
-    Papers decay linearly over max_days.
-    """
     days_ago = (date.today() - published_date).days
     if days_ago >= max_days:
         return 0.0
@@ -33,23 +29,10 @@ def calculate_paper_score(
     metrics: PaperMetrics,
     has_implementations: bool,
 ) -> float:
-    """
-    Calculate overall ranking score for a paper.
-    
-    Score components (weights sum to 1.0):
-    - Recency: 0.15 (newer papers ranked higher)
-    - Citation velocity: 0.25 (fast-growing citations)
-    - Implementation: 0.20 (code availability)
-    - Total citations: 0.15 (overall impact)
-    - Social score: 0.10 (social media mentions)
-    - Base quality: 0.15 (placeholder for author reputation etc.)
-    """
     # Recency score (linear decay over 90 days)
     days_ago = (date.today() - paper.published_date).days
     recency = calculate_recency_score(paper.published_date) * 0.15
-    
-    # Freshness Boost: guarantee visibility for brand new papers
-    freshness_boost = 3.0 if days_ago <= 7 else 1.0  # Increased to 3.0x
+    freshness_boost = 3.0 if days_ago <= 7 else 1.0
     
     # Citation velocity (normalized, cap at 50 citations/week)
     if metrics:
@@ -59,16 +42,12 @@ def calculate_paper_score(
         # Total citations (log scale, cap at 1000)
         import math
         citation_score = min(math.log10(max(metrics.citation_count, 1) + 1) / 3, 1.0) * 0.15
-        
-        # Social score (normalized)
         social = min(metrics.social_score / 100, 1.0) * 0.10
-        
-        # Implementation score (increased weight)
         impl_score = 0.0
         if has_implementations and metrics.github_stars > 0:
             impl_score = min(math.log10(metrics.github_stars + 1) / 4, 1.0) * 0.30  # Increased from 0.20
         elif has_implementations:
-            impl_score = 0.15  # Has code
+        impl_score = 0.15
     else:
         velocity = 0.0
         citation_score = 0.0
@@ -170,12 +149,8 @@ async def cache_top_papers(db: Session, limit: int = 1000):
         for p in top_papers
     ]
     
-    cache.set("top_papers", paper_scores, ttl_seconds=21600)  # 6 hours
-    
-    # Invalidate trending cache to show new rankings immediately
-    cache.delete("trending:7:20")  # specific keys or use wildcard if supported by helper
-    # Since helper might not support patterns, we relies on TTL or explicit keys
-    # But for now let's hope 15 min TTL expires or user restarts backend
+    cache.set("top_papers", paper_scores, ttl_seconds=21600)
+    cache.delete("trending:7:20")
     logger.info(f"Cached {len(paper_scores)} top papers")
 
 

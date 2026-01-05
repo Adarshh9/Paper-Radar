@@ -27,18 +27,11 @@ async def lifespan(app: FastAPI):
     Application lifespan handler.
     Runs on startup and shutdown.
     """
-    # Startup
-    logger.info("Starting Paper Radar API", version="1.0.0", environment=settings.environment)
-    
-    # Create database tables (for development)
-    # In production, use Alembic migrations
     if settings.environment == "development":
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified")
     
     yield
-    
-    # Shutdown
     logger.info("Shutting down Paper Radar API")
 
 
@@ -52,10 +45,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware: GZip compression for responses
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Middleware: CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -73,7 +64,6 @@ async def log_requests(request: Request, call_next):
     request_id = str(uuid4())[:8]
     start_time = time.time()
     
-    # Add request ID to logger context
     with logger.contextualize(request_id=request_id):
         logger.info(
             "Request started",
@@ -100,7 +90,6 @@ async def log_requests(request: Request, call_next):
         return response
 
 
-# Health check endpoint
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Check if the API is running."""
@@ -112,15 +101,11 @@ async def health_check():
     }
 
 
-# Readiness check for Kubernetes/Docker
 @app.get("/ready", tags=["Health"])
 async def readiness_check():
-    """Check if the API is ready to accept traffic."""
-    # TODO: Add database and redis connectivity checks
     return {"status": "ready"}
 
 
-# Include API routers
 app.include_router(
     papers.router,
     prefix="/api/papers",

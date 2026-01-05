@@ -1,4 +1,4 @@
-# 📡 Paper Radar
+# Paper Radar
 
 **Academic paper discovery platform** that aggregates, ranks, and provides deep insights for research papers. Built for researchers who want to cut through the noise.
 
@@ -7,7 +7,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## 🏗 Architecture
+## Architecture
 
 ```mermaid
 graph TD
@@ -26,25 +26,25 @@ graph TD
     end
 ```
 
-## ✨ Key Features
+## Key Features
 
-- **🔍 Smart Ranking V2**: Papers are ranked by a weighted score of meaningful signals, not just citation counts.
+- **Smart Ranking V2**: Papers are ranked by a weighted score of meaningful signals, not just citation counts.
     - **Freshness Boost**: New papers (<7 days) get a 3.0x score multiplier.
     - **Velocity**: We track daily citation rates to find rising stars.
     - **Code Availability**: Papers with implementation code are prioritized.
-- **🧠 Deep Dive Insights**: AI-generated structured summaries that explain papers without needing to open the PDF.
+- **Deep Dive Insights**: AI-generated structured summaries that explain papers without needing to open the PDF.
     - **ELI5**: "Explain Like I'm 5" simplifications.
     - **Methodology & Use Cases**: Technical deep dives extracted automatically.
-- **💻 Implementation Finder**: Automatically links GitHub repositories and HuggingFace models to papers.
+- **Implementation Finder**: Automatically links GitHub repositories and HuggingFace models to papers.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Python 3.11+ & [uv](https://github.com/astral-sh/uv)
 - Node.js 18+
 - Docker & Docker Compose
 
-### ⚡ Fast Setup (Docker)
+### Fast Setup (Docker)
 
 ```bash
 # 1. Clone & Setup Utils
@@ -65,7 +65,7 @@ npm install && npm run dev
 
 Visit **http://localhost:3000** to browse.
 
-## 🛠 Backend Workflow
+## Backend Workflow
 
 The backend is organized into modular services and data pipelines.
 
@@ -90,7 +90,7 @@ Run these scripts to populate your local database:
     uv run python -m scripts.calculate_ranking_scores
     ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Backend variables (`backend/.env`)
 | Variable | Descrption |
@@ -106,12 +106,12 @@ Run these scripts to populate your local database:
 |----------|---------|-------------|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api` | Backend API URL |
 
-## 🤝 Contributing
+## Contributing
 1. Fork the repo
 2. Create feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit changes (`git commit -m 'Add amazing feature'`)
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 MIT License. See [LICENSE](LICENSE).

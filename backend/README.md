@@ -2,7 +2,7 @@
 
 The brain of the platform. This service handles data ingestion, AI enrichment, ranking algorithms, and API delivery.
 
-## 🧠 System Architecture
+## System Architecture
 
 ```mermaid
 graph TD
@@ -36,9 +36,9 @@ graph TD
     DB --> API
 ```
 
-## 🔄 How It Works (The Lifecycle)
+## How It Works (The Lifecycle)
 
-The backend operates on a **continuous enrichment cycle**:
+The backend operates on a continuous enrichment cycle:
 
 ### 1. Ingestion (`scripts/ingest_arxiv_daily.py`)
 - Fetches papers from arXiv categories: `cs.AI`, `cs.LG`, `cs.CV`, `cs.CL`.
@@ -76,7 +76,7 @@ Final_Score = Base_Score * Freshness_Boost
 - **Freshness Boost**: A **3.0x multiplier** is applied to papers < 7 days old to ensure the "Trending" tab is always fresh.
 - **Code Bonus**: Providing code gives a paper a roughly 30% advantage in ranking.
 
-## 🛠 Internal Modules
+## Internal Modules
 
 ### `app/services/`
 - **`llm_service.py`**: Handles rate limiting (Groq tier limits) and structured JSON parsing.
@@ -90,7 +90,7 @@ Final_Score = Base_Score * Freshness_Boost
     - Trending List: 15 minutes (to reflect velocity changes).
     - Summaries: Permanent (cached in DB), or 7 days in Redis.
 
-## 🚀 Setup & Init
+## Setup & Init
 
 ### Environment Variables
 Create `.env`:
