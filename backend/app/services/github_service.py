@@ -19,6 +19,12 @@ class GitHubService:
     
     BASE_URL = "https://api.github.com"
     
+    # Regex patterns for finding GitHub links in text
+    GITHUB_PATTERNS = [
+        r'github\.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+)',
+        r'github\.io/([a-zA-Z0-9_-]+)',
+    ]
+    
     def __init__(self):
         self.token = settings.github_token
         self._rate_limit_remaining = 5000
@@ -51,13 +57,32 @@ class GitHubService:
                 logger.warning("GitHub rate limit low, waiting", wait_seconds=round(wait_time))
                 await asyncio.sleep(min(wait_time, 60))
     
+    def extract_github_links_from_text(self, text: str) -> List[str]:
+        """Extract GitHub repository links from any text (abstract, paper content, etc.)."""
+        repos = set()
+        
+        for pattern in self.GITHUB_PATTERNS:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                # Clean up the repo path
+                repo_path = match.strip('/')
+                # Filter out common false positives
+                if '.' not in repo_path.split('/')[-1]:  # Likely a repo, not a file
+                    repos.add(repo_path)
+        
+        return list(repos)
+    
     async def search_repos_by_paper(
         self,
         arxiv_id: str,
         paper_title: Optional[str] = None,
-        min_stars: int = 10,
+        abstract: Optional[str] = None,
+        min_stars: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Search GitHub for repositories implementing a paper."""
+        """
+        Search GitHub for repositories implementing a paper.
+        Enhanced to also search in abstract for explicit GitHub links.
+        """
         # Check cache
         cache_key = f"gh:repos:{arxiv_id}"
         cached = cache.get(cache_key)
@@ -65,39 +90,116 @@ class GitHubService:
             return cached
         
         repos = []
+        seen_urls = set()
         
-        # Search by arXiv ID first (most precise)
+        # 1. First, extract any GitHub links mentioned in abstract
+        if abstract:
+            explicit_repos = self.extract_github_links_from_text(abstract)
+            for repo_path in explicit_repos:
+                if '/' in repo_path:
+                    repo_details = await self.get_repo_details(
+                        repo_path.split('/')[0],
+                        '/'.join(repo_path.split('/')[1:]),
+                    )
+                    if repo_details and repo_details["repo_url"] not in seen_urls:
+                        repos.append(repo_details)
+                        seen_urls.add(repo_details["repo_url"])
+                        logger.info(f"Found explicit GitHub link in abstract: {repo_path}")
+        
+        # 2. Search by arXiv ID (most precise)
         arxiv_repos = await self._search_repositories(
             f"arxiv {arxiv_id}",
             min_stars=min_stars,
         )
-        repos.extend(arxiv_repos)
+        for repo in arxiv_repos:
+            if repo["repo_url"] not in seen_urls:
+                repos.append(repo)
+                seen_urls.add(repo["repo_url"])
         
-        # If no results and we have a title, search by title
-        if not repos and paper_title:
+        # 3. Search by paper title variations
+        if paper_title and len(repos) < 5:
+            # Try different title variations
             clean_title = re.sub(r'[^\w\s]', '', paper_title)[:50]
+            
+            # Search with "paper implementation"
             title_repos = await self._search_repositories(
-                f"{clean_title} paper",
+                f"{clean_title} implementation",
                 min_stars=min_stars,
             )
             for repo in title_repos:
-                if await self._verify_paper_reference(repo, arxiv_id, paper_title):
-                    repos.append(repo)
+                if repo["repo_url"] not in seen_urls:
+                    if await self._verify_paper_reference(repo, arxiv_id, paper_title):
+                        repos.append(repo)
+                        seen_urls.add(repo["repo_url"])
+            
+            # Search with "paper" suffix
+            if len(repos) < 5:
+                title_repos2 = await self._search_repositories(
+                    f"{clean_title} paper",
+                    min_stars=max(min_stars - 3, 1),  # Lower threshold
+                )
+                for repo in title_repos2:
+                    if repo["repo_url"] not in seen_urls:
+                        if await self._verify_paper_reference(repo, arxiv_id, paper_title):
+                            repos.append(repo)
+                            seen_urls.add(repo["repo_url"])
         
-        # Deduplicate by repo URL
-        seen = set()
-        unique_repos = []
-        for repo in repos:
-            if repo["repo_url"] not in seen:
-                seen.add(repo["repo_url"])
-                unique_repos.append(repo)
+        # 4. Search Papers With Code (if available)
+        pwc_repos = await self._search_papers_with_code(arxiv_id)
+        for repo in pwc_repos:
+            if repo["repo_url"] not in seen_urls:
+                repos.append(repo)
+                seen_urls.add(repo["repo_url"])
         
         # Cache for 24 hours
-        cache.set(cache_key, unique_repos, ttl_seconds=86400)
+        cache.set(cache_key, repos, ttl_seconds=86400)
         
-        logger.debug("Found GitHub repos", arxiv_id=arxiv_id, count=len(unique_repos))
+        logger.debug("Found GitHub repos", arxiv_id=arxiv_id, count=len(repos))
         
-        return unique_repos[:10]
+        return repos[:15]  # Return up to 15 repos
+    
+    async def _search_papers_with_code(self, arxiv_id: str) -> List[Dict[str, Any]]:
+        """Search Papers With Code for implementations."""
+        url = f"https://paperswithcode.com/api/v1/papers/?arxiv_id={arxiv_id}"
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    return []
+                
+                data = response.json()
+                repos = []
+                
+                if data.get("results"):
+                    paper = data["results"][0]
+                    paper_id = paper.get("id")
+                    
+                    if paper_id:
+                        # Get implementations for this paper
+                        impl_url = f"https://paperswithcode.com/api/v1/papers/{paper_id}/repositories/"
+                        impl_response = await client.get(impl_url)
+                        
+                        if impl_response.status_code == 200:
+                            impl_data = impl_response.json()
+                            
+                            for impl in impl_data.get("results", []):
+                                if impl.get("url") and "github.com" in impl["url"]:
+                                    repos.append({
+                                        "repo_url": impl["url"],
+                                        "repo_name": impl["url"].replace("https://github.com/", ""),
+                                        "description": impl.get("description", ""),
+                                        "stars": impl.get("stars", 0),
+                                        "language": "",
+                                        "last_updated": None,
+                                        "source": "paperswithcode",
+                                    })
+                
+                return repos
+                
+            except Exception as e:
+                logger.debug(f"Papers With Code search failed: {e}")
+                return []
     
     async def _search_repositories(
         self,

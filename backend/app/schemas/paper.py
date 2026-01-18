@@ -74,6 +74,8 @@ class PaperSummaryResponse(BaseModel):
     real_world_use_cases: Optional[str] = None
     limitations: Optional[str] = None
     results_summary: Optional[str] = None
+    pros: Optional[str] = None  # New: advantages/strengths
+    cons: Optional[str] = None  # New: disadvantages/weaknesses
     generated_by: str
     generated_at: datetime
     quality_score: Optional[float] = None

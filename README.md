@@ -42,9 +42,39 @@ graph TD
 ### Prerequisites
 - Python 3.11+ & [uv](https://github.com/astral-sh/uv)
 - Node.js 18+
-- Docker & Docker Compose
+- Docker & Docker Compose (optional for local development)
 
-### Fast Setup (Docker)
+### Local Development (No Docker Required!) ⭐
+
+For quick local development without Docker, the app uses SQLite and file-based caching. Your data persists in the `backend/data/` folder.
+
+```bash
+# 1. Clone & Setup
+git clone https://github.com/Adarshh9/paper-radar.git
+cd paper-radar
+
+# 2. Configure Environment
+cp backend/.env.local.example backend/.env
+# Edit backend/.env: Add GROQ_API_KEY (for AI summaries) and GITHUB_TOKEN (for implementations)
+
+# 3. Setup Backend
+cd backend
+uv sync
+
+# 4. Quick Start (initializes DB and runs ingestion)
+uv run python -m scripts.quickstart
+
+# 5. Start Backend API
+uv run uvicorn app.main:app --reload
+
+# 6. Start Frontend (in another terminal)
+cd frontend
+npm install && npm run dev
+```
+
+Visit **http://localhost:3000** to browse.
+
+### Docker Setup (Production-like)
 
 ```bash
 # 1. Clone & Setup Utils
@@ -54,6 +84,7 @@ cd paper-radar
 # 2. Configure Environment
 cp backend/.env.example backend/.env
 # Edit backend/.env: Add GROQ_API_KEY (required) and GITHUB_TOKEN (optional)
+# Set USE_LOCAL_STORAGE=false in .env
 
 # 3. Start Infrastructure (DB + Redis + API)
 docker-compose up -d
@@ -63,14 +94,25 @@ cd frontend
 npm install && npm run dev
 ```
 
-Visit **http://localhost:3000** to browse.
-
 ## Backend Workflow
 
 The backend is organized into modular services and data pipelines.
 
 ### Data Pipelines
-Run these scripts to populate your local database:
+
+**Unified Pipeline** (Recommended):
+```bash
+# Run all stages in sequence (quick mode for faster initial setup)
+uv run python -m scripts.run_pipeline --quick
+
+# Full pipeline with all papers
+uv run python -m scripts.run_pipeline
+
+# Skip enrichment if hitting rate limits
+uv run python -m scripts.run_pipeline --skip-enrichment
+```
+
+**Individual Scripts**:
 
 1.  **Ingestion**: Fetches latest papers from arXiv (CS.AI, CS.LG, etc.).
     ```bash
@@ -85,7 +127,7 @@ Run these scripts to populate your local database:
     ```bash
     uv run python -m scripts.generate_summaries
     ```
-4.  **Ranking**: Calculates scores and caches trending lists in Redis.
+4.  **Ranking**: Calculates scores and caches trending lists.
     ```bash
     uv run python -m scripts.calculate_ranking_scores
     ```

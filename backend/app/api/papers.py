@@ -6,13 +6,13 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, desc, or_
+from pydantic import BaseModel
+from sqlalchemy import func, desc, or_, String
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user_optional
 from app.core.cache import cache
-from app.models import Paper, PaperMetrics, PaperImplementation, PaperSummary, User
+from app.models import Paper, PaperMetrics
 from app.schemas import (
     PaperListItem,
     PaperListResponse,
@@ -21,6 +21,21 @@ from app.schemas import (
 )
 
 router = APIRouter()
+
+
+# Request/Response models for paper submission
+class PaperSubmitRequest(BaseModel):
+    url: str  # arXiv URL (abs or pdf)
+
+
+class PaperSubmitResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    error: Optional[str] = None
+    paper_id: Optional[str] = None
+    arxiv_id: Optional[str] = None
+    title: Optional[str] = None
+    already_exists: bool = False
 
 
 def paper_to_list_item(paper: Paper) -> PaperListItem:
@@ -44,6 +59,18 @@ def paper_to_list_item(paper: Paper) -> PaperListItem:
 
 @router.get("", response_model=PaperListResponse)
 async def list_papers(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    date_from: Optional[date] = Query(None, description="Filter papers from this date"),
+    date_to: Optional[date] = Query(None, description="Filter papers until this date"),
+    has_implementation: Optional[bool] = Query(None, description="Filter papers with implementations"),
+    sort_by: str = Query("rank_score", description="Sort by: rank_score, published_date, citations"),
+    db: Session = Depends(get_db),
+):
+    """
+    List papers with pagination and filtering.
+    """
     # Build query
     query = db.query(Paper).options(
         joinedload(Paper.metrics),
@@ -51,10 +78,12 @@ async def list_papers(
         joinedload(Paper.implementations),
     )
     if category:
+        # Filter by primary category or check if category is in categories JSON array
+        # Use LIKE for JSON array compatibility with SQLite
         query = query.filter(
             or_(
                 Paper.primary_category == category,
-                Paper.categories.contains([category])
+                Paper.categories.cast(String).like(f'%"{category}"%')
             )
         )
     
@@ -101,10 +130,22 @@ async def list_papers(
 
 @router.get("/trending", response_model=List[PaperListItem])
 async def get_trending_papers(
-    # Calculate date threshold
-    days_map = {"day": 1, "week": 7, "month": 30}
-    days = days_map.get(timeframe, 7)
-    threshold_date = date.today() - timedelta(days=days)
+    timeframe: str = Query("quarter", description="Timeframe: week, month, quarter, half_year, year"),
+    limit: int = Query(10, ge=1, le=50, description="Number of papers to return"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get trending papers based on rank score.
+    """
+    # Calculate date threshold - updated ranges without "all time"
+    days_map = {
+        "week": 7, 
+        "month": 30, 
+        "quarter": 90, 
+        "half_year": 180, 
+        "year": 365,
+    }
+    days = days_map.get(timeframe, 90)  # Default to 3 months
     
     # Check cache
     cache_key = f"trending:{timeframe}:{limit}"
@@ -113,9 +154,18 @@ async def get_trending_papers(
         return cached
     
     try:
-        paper_ids_query = (
+        # Build base query
+        query = (
             db.query(Paper.id)
             .outerjoin(PaperMetrics)
+        )
+        
+        # Apply date filter (always apply, no "all time" option)
+        threshold_date = date.today() - timedelta(days=days)
+        query = query.filter(Paper.published_date >= threshold_date)
+        
+        paper_ids_query = (
+            query
             .order_by(
                 desc(func.coalesce(PaperMetrics.overall_rank_score, 0)),
                 desc(Paper.published_date),
@@ -160,6 +210,9 @@ async def get_trending_papers(
 
 @router.get("/categories")
 async def get_categories(db: Session = Depends(get_db)):
+    """
+    Get list of all paper categories with counts.
+    """
     # Check cache
     cache_key = "categories:list"
     cached = cache.get(cache_key)
@@ -190,6 +243,12 @@ async def get_categories(db: Session = Depends(get_db)):
 
 @router.get("/{paper_id}", response_model=PaperDetail)
 async def get_paper_detail(
+    paper_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """
+    Get detailed information about a specific paper.
+    """
     # Check cache
     cache_key = f"paper:{paper_id}"
     cached = cache.get(cache_key)
@@ -222,6 +281,14 @@ async def get_paper_detail(
 
 @router.post("/search", response_model=PaperListResponse)
 async def search_papers(
+    request: PaperSearchRequest,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    db: Session = Depends(get_db),
+):
+    """
+    Search papers by title and abstract.
+    """
     # Build search query
     search_term = f"%{request.query}%"
     
@@ -276,3 +343,28 @@ async def search_papers(
         page_size=page_size,
         total_pages=total_pages,
     )
+
+
+@router.post("/submit", response_model=PaperSubmitResponse)
+async def submit_paper(
+    request: PaperSubmitRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Submit a paper URL for community contribution.
+    
+    Accepts arXiv URLs in formats:
+    - https://arxiv.org/abs/2512.24880
+    - https://arxiv.org/pdf/2512.24880
+    - https://arxiv.org/pdf/2512.24880.pdf
+    
+    The paper will be fetched, indexed, and enriched with:
+    - AI-generated summaries (using full paper context when available)
+    - GitHub implementation discovery
+    - Citation metrics
+    """
+    from app.services.paper_submission_service import paper_submission_service
+    
+    result = await paper_submission_service.submit_paper(request.url)
+    
+    return PaperSubmitResponse(**result)

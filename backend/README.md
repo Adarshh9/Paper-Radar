@@ -92,31 +92,302 @@ Final_Score = Base_Score * Freshness_Boost
 
 ## Setup & Init
 
-### Environment Variables
-Create `.env`:
-```ini
-DATABASE_URL=postgresql://user:pass@localhost:5432/radar
-REDIS_URL=redis://localhost:6379/0
-GROQ_API_KEY=gsk_...        # Required for summaries
-GITHUB_TOKEN=ghp_...        # Optional (avoids rate limits)
-SECRET_KEY=...              # Generic string
+### Prerequisites
+
+- **Python 3.11+** (required)
+- **uv** (recommended) or pip
+- **Docker & Docker Compose** (for PostgreSQL/Redis) OR local installations
+- **Git**
+
+### Step 1: Clone and Navigate
+
+```powershell
+# Clone the repository
+git clone https://github.com/your-org/paper-radar.git
+cd paper-radar/backend
 ```
 
-### Running Locally
-```bash
-# 1. Install Dependencies
+### Step 2: Environment Variables
+
+Create a `.env` file in the `backend/` directory:
+
+```ini
+# === Required ===
+SECRET_KEY=your-super-secret-key-at-least-32-chars
+
+# === API Keys (Get these first) ===
+GROQ_API_KEY=gsk_...                    # Required for AI summaries (https://console.groq.com)
+GITHUB_TOKEN=ghp_...                    # Optional but recommended (https://github.com/settings/tokens)
+SEMANTIC_SCHOLAR_API_KEY=               # Optional (https://www.semanticscholar.org/product/api)
+
+# === Local Development Mode (Recommended for first setup) ===
+USE_LOCAL_STORAGE=true                  # Uses SQLite + file cache (no Docker needed)
+LOCAL_DATA_DIR=./data
+
+# === Production Mode (requires Docker) ===
+# USE_LOCAL_STORAGE=false
+# DATABASE_URL=postgresql://radar:radar@localhost:5432/paperradar
+# REDIS_URL=redis://localhost:6379/0
+
+# === Optional Tuning ===
+ENVIRONMENT=development
+DEBUG=true
+ARXIV_REQUESTS_PER_SECOND=2.0
+SEMANTIC_SCHOLAR_REQUESTS_PER_5MIN=80
+GROQ_REQUESTS_PER_MINUTE=30
+```
+
+### Step 3: Install Dependencies
+
+```powershell
+# Using uv (recommended - faster)
 uv sync
 
-# 2. Database
-# Ensure Postgres/Redis are running (via Docker usually)
+# OR using pip
+pip install -e ".[dev]"
+```
+
+### Step 4: Start Infrastructure (Production Mode Only)
+
+Skip this if using `USE_LOCAL_STORAGE=true`.
+
+```powershell
+# Start PostgreSQL and Redis
 docker-compose up -d db redis
 
-# 3. Migrations (First Run)
-# The app creates tables automatically on startup via SQLAlchemy `create_all`.
-# Just run the app once:
-uv run uvicorn app.main:app
+# Verify containers are running
+docker-compose ps
+```
 
-# 4. Populate Data
+### Step 5: Initialize Database
+
+```powershell
+# The app auto-creates tables on first run
+# Just start the server once:
+uv run uvicorn app.main:app --reload
+
+# Or run the quickstart script:
+uv run python -m scripts.quickstart
+```
+
+### Step 6: Populate Data
+
+```powershell
+# Option A: Run full pipeline (recommended)
+uv run python -m scripts.run_pipeline
+
+# Option B: Run steps individually
+# 1. Fetch papers from arXiv
 uv run python -m scripts.ingest_arxiv_daily
+
+# 2. Enrich with citation data
+uv run python -m scripts.enrich_semantic_scholar
+
+# 3. Find GitHub implementations
+uv run python -m scripts.discover_implementations
+
+# 4. Generate AI summaries (requires GROQ_API_KEY)
+uv run python -m scripts.generate_summaries
+
+# 5. Calculate ranking scores
 uv run python -m scripts.calculate_ranking_scores
+```
+
+---
+
+## Running the Server
+
+### Development Mode
+
+```powershell
+# With auto-reload
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Or using the shorthand
+uv run python -m uvicorn app.main:app --reload
+```
+
+### Production Mode
+
+```powershell
+# With multiple workers
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### Verify Server is Running
+
+```powershell
+# Health check
+curl http://localhost:8000/health
+
+# API docs (interactive)
+# Open in browser: http://localhost:8000/docs
+
+# Get trending papers
+curl http://localhost:8000/api/papers/trending
+```
+
+---
+
+## Testing
+
+### Run All Tests
+
+```powershell
+# Run test suite
+uv run pytest
+
+# With coverage report
+uv run pytest --cov=app --cov-report=html
+
+# Verbose output
+uv run pytest -v
+```
+
+### Run Specific Tests
+
+```powershell
+# Test a specific file
+uv run pytest tests/test_papers.py
+
+# Test a specific function
+uv run pytest tests/test_papers.py::test_get_trending
+
+# Run only fast tests (skip slow integration tests)
+uv run pytest -m "not slow"
+```
+
+### Quick Service Tests
+
+```powershell
+# Test external service connections
+uv run python -m scripts.test_services
+
+# Test the ranking algorithm
+uv run python -m scripts.quick_test
+```
+
+---
+
+## API Quick Reference
+
+Once running, the API is available at `http://localhost:8000`.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/docs` | GET | Interactive API documentation |
+| `/api/papers` | GET | List papers (paginated) |
+| `/api/papers/trending` | GET | Get trending papers |
+| `/api/papers/{id}` | GET | Get paper details |
+| `/api/papers/search` | POST | Search papers |
+| `/api/papers/categories` | GET | List categories |
+| `/api/recommendations` | GET | Get personalized recommendations |
+
+### Example API Calls
+
+```powershell
+# Get trending papers (last week)
+curl "http://localhost:8000/api/papers/trending?timeframe=week&limit=10"
+
+# Search papers
+curl -X POST "http://localhost:8000/api/papers/search" `
+  -H "Content-Type: application/json" `
+  -d '{"query": "transformer attention mechanism"}'
+
+# Get paper by ID
+curl "http://localhost:8000/api/papers/{paper-uuid}"
+
+# Filter by category
+curl "http://localhost:8000/api/papers?category=cs.LG&page=1&page_size=20"
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**"Database connection failed"**
+```powershell
+# If using local storage, ensure USE_LOCAL_STORAGE=true in .env
+# If using Docker, check containers:
+docker-compose ps
+docker-compose logs db
+```
+
+**"GROQ_API_KEY not set"**
+```powershell
+# Get a free API key from https://console.groq.com
+# Add to .env: GROQ_API_KEY=gsk_your_key_here
+```
+
+**"Rate limit exceeded"**
+```powershell
+# Reduce request rates in .env:
+ARXIV_REQUESTS_PER_SECOND=1.0
+SEMANTIC_SCHOLAR_REQUESTS_PER_5MIN=50
+```
+
+**"Module not found"**
+```powershell
+# Ensure you're in the backend directory
+cd backend
+
+# Reinstall dependencies
+uv sync --reinstall
+```
+
+### Reset Everything
+
+```powershell
+# Delete local data and start fresh
+Remove-Item -Recurse -Force ./data
+uv run python -m scripts.quickstart
+```
+
+---
+
+## Development Workflow
+
+### Code Quality
+
+```powershell
+# Format code
+uv run ruff format .
+
+# Lint code
+uv run ruff check .
+
+# Type checking
+uv run mypy app/
+
+# Run all checks
+uv run pre-commit run --all-files
+```
+
+### Adding New Dependencies
+
+```powershell
+# Add a dependency
+uv add package-name
+
+# Add a dev dependency
+uv add --dev package-name
+
+# Update lock file
+uv lock
+```
+
+### Database Migrations (Production)
+
+```powershell
+# Create a new migration
+uv run alembic revision --autogenerate -m "description"
+
+# Apply migrations
+uv run alembic upgrade head
+
+# Rollback one migration
+uv run alembic downgrade -1
 ```

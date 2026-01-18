@@ -1,5 +1,6 @@
 """
 Semantic Scholar API service for citation data and paper enrichment.
+Includes robust rate limiting and exponential backoff.
 """
 import asyncio
 from datetime import datetime, timedelta
@@ -31,15 +32,19 @@ class SemanticScholarService:
         self.window_start = datetime.now()
         self.window_duration = timedelta(minutes=5)
         self.max_requests_per_window = settings.semantic_scholar_requests_per_5min
+        self._consecutive_rate_limits = 0
+        self._max_consecutive_rate_limits = 3
+        self._base_backoff_seconds = 60
     
     async def _rate_limit(self):
-        """Ensure we don't exceed rate limits."""
+        """Ensure we don't exceed rate limits with adaptive backoff."""
         now = datetime.now()
         
         # Reset window if needed
         if now - self.window_start > self.window_duration:
             self.requests_this_window = 0
             self.window_start = now
+            self._consecutive_rate_limits = 0
         
         # Wait if at limit
         if self.requests_this_window >= self.max_requests_per_window:
@@ -51,19 +56,38 @@ class SemanticScholarService:
                 self.window_start = datetime.now()
         
         self.requests_this_window += 1
+        
+        # Add small delay between requests to be gentle on the API
+        await asyncio.sleep(0.5)
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Get request headers, including API key if available."""
+        headers = {
+            "User-Agent": "PaperRadar/1.0 (Academic Research Tool)"
+        }
+        if settings.semantic_scholar_api_key:
+            headers["x-api-key"] = settings.semantic_scholar_api_key
+        return headers
     
     async def get_paper_details(
         self,
         arxiv_id: str,
+        retry_count: int = 0,
     ) -> Optional[Dict[str, Any]]:
         """
         Get paper details from Semantic Scholar using arXiv ID.
+        Returns None if paper not found, "RATE_LIMITED" if rate limit exceeded.
         """
         # Check cache first
         cache_key = f"ss:paper:{arxiv_id}"
         cached = cache.get(cache_key)
         if cached:
             return cached
+        
+        # Check if we've hit too many consecutive rate limits
+        if self._consecutive_rate_limits >= self._max_consecutive_rate_limits:
+            logger.warning("Too many consecutive rate limits, backing off")
+            return "RATE_LIMITED"
         
         await self._rate_limit()
         
@@ -75,14 +99,35 @@ class SemanticScholarService:
                 response = await client.get(
                     url,
                     params={"fields": fields},
+                    headers=self._get_headers(),
                 )
                 
                 if response.status_code == 404:
                     logger.debug("Paper not found in S2", arxiv_id=arxiv_id)
                     return None
                 
+                if response.status_code == 429:
+                    self._consecutive_rate_limits += 1
+                    backoff_time = self._base_backoff_seconds * (2 ** retry_count)
+                    backoff_time = min(backoff_time, 300)  # Cap at 5 minutes
+                    
+                    if retry_count < 2:
+                        logger.warning(
+                            "Semantic Scholar rate limit hit, backing off",
+                            backoff_seconds=backoff_time,
+                            retry=retry_count + 1,
+                        )
+                        await asyncio.sleep(backoff_time)
+                        return await self.get_paper_details(arxiv_id, retry_count + 1)
+                    else:
+                        logger.warning("Max retries reached for rate limit")
+                        return "RATE_LIMITED"
+                
                 response.raise_for_status()
                 data = response.json()
+                
+                # Success - reset consecutive rate limit counter
+                self._consecutive_rate_limits = 0
                 
                 # Cache for 6 hours
                 cache.set(cache_key, data, ttl_seconds=21600)
@@ -90,10 +135,6 @@ class SemanticScholarService:
                 return data
                 
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    logger.warning("Semantic Scholar rate limit hit, retrying")
-                    await asyncio.sleep(60)
-                    return await self.get_paper_details(arxiv_id)
                 logger.error("S2 API error", error=str(e), arxiv_id=arxiv_id)
                 return None
             except httpx.HTTPError as e:
@@ -106,6 +147,12 @@ class SemanticScholarService:
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """Get papers that cite the given paper."""
+        # Check cache first
+        cache_key = f"ss:citations:{paper_id}:{limit}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+        
         await self._rate_limit()
         
         url = f"{self.BASE_URL}/paper/{paper_id}/citations"
@@ -118,11 +165,22 @@ class SemanticScholarService:
                         "fields": "paperId,title,year,citationCount",
                         "limit": limit,
                     },
+                    headers=self._get_headers(),
                 )
+                
+                if response.status_code == 429:
+                    logger.warning("Rate limit on citations endpoint")
+                    return []
+                
                 response.raise_for_status()
                 data = response.json()
                 
-                return data.get("data", [])
+                result = data.get("data", [])
+                
+                # Cache for 2 hours
+                cache.set(cache_key, result, ttl_seconds=7200)
+                
+                return result
                 
             except httpx.HTTPError as e:
                 logger.error("S2 citations error", error=str(e), paper_id=paper_id)
@@ -171,6 +229,7 @@ class SemanticScholarService:
                         "fields": "paperId,title,abstract,authors,year,citationCount,externalIds",
                         "limit": limit,
                     },
+                    headers=self._get_headers(),
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -200,6 +259,7 @@ class SemanticScholarService:
                         "fields": ",".join(self.PAPER_FIELDS),
                         "limit": limit,
                     },
+                    headers=self._get_headers(),
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -211,5 +271,5 @@ class SemanticScholarService:
                 return []
 
 
-# Singleton instance
+# Singleton service instance
 semantic_scholar_service = SemanticScholarService()

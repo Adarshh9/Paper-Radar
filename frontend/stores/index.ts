@@ -33,18 +33,18 @@ export const useAuthStore = create<AuthState>()(
 
 // Time range to days mapping
 const TIME_RANGE_DAYS: Record<string, number | null> = {
-    today: 1,
     week: 7,
     month: 30,
     quarter: 90,
-    all: null,
+    half_year: 180,
+    year: 365,
 };
 
 interface FilterState {
     category: string | null;
     sortBy: string;
     hasImplementation: boolean | null;
-    dateRange: string; // 'today' | 'week' | 'month' | 'quarter' | 'all'
+    dateRange: string; // 'week' | 'month' | 'quarter' | 'half_year' | 'year'
     setCategory: (category: string | null) => void;
     setSortBy: (sortBy: string) => void;
     setHasImplementation: (value: boolean | null) => void;
@@ -58,7 +58,7 @@ export const useFilterStore = create<FilterState>((set, get) => ({
     category: null,
     sortBy: 'rank_score',
     hasImplementation: null,
-    dateRange: 'week', // Default to this week
+    dateRange: 'quarter', // Default to last 3 months
     setCategory: (category) => set({ category }),
     setSortBy: (sortBy) => set({ sortBy }),
     setHasImplementation: (hasImplementation) => set({ hasImplementation }),
@@ -67,12 +67,13 @@ export const useFilterStore = create<FilterState>((set, get) => ({
         category: null,
         sortBy: 'rank_score',
         hasImplementation: null,
-        dateRange: 'week',
+        dateRange: 'quarter',
     }),
     getDateFrom: () => {
         const days = TIME_RANGE_DAYS[get().dateRange];
-        if (days === null) return undefined;
+        if (days === null || days === undefined) return undefined;
         const date = new Date();
+        date.setHours(0, 0, 0, 0);
         date.setDate(date.getDate() - days);
         return date.toISOString().split('T')[0];
     },

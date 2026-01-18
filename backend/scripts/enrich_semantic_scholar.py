@@ -3,7 +3,7 @@ Semantic Scholar enrichment job.
 Fetches citation data and enriches papers with Semantic Scholar information.
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 from loguru import logger
@@ -16,6 +16,11 @@ from app.services.semantic_scholar_service import semantic_scholar_service
 
 # Initialize logging
 setup_logging()
+
+
+def utcnow():
+    """Get current UTC datetime (timezone-aware)."""
+    return datetime.now(timezone.utc)
 
 
 async def enrich_papers_with_semantic_scholar(
@@ -38,6 +43,7 @@ async def enrich_papers_with_semantic_scholar(
         "not_found": 0,
         "updated": 0,
         "errors": 0,
+        "skipped_rate_limit": 0,
     }
 
     db = SessionLocal()
@@ -51,7 +57,7 @@ async def enrich_papers_with_semantic_scholar(
             query = query.filter(Paper.semantic_scholar_id.is_(None))
         else:
             # Include papers that haven't been updated in 24 hours
-            cutoff = datetime.utcnow() - timedelta(hours=24)
+            cutoff = utcnow() - timedelta(hours=24)
             query = query.outerjoin(PaperMetrics).filter(
                 or_(
                     Paper.semantic_scholar_id.is_(None),
@@ -72,9 +78,15 @@ async def enrich_papers_with_semantic_scholar(
                 # Get paper details from Semantic Scholar
                 s2_data = await semantic_scholar_service.get_paper_details(paper.arxiv_id)
 
-                if not s2_data:
+                if s2_data is None:
                     stats["not_found"] += 1
                     continue
+                
+                # Check if we got rate limited (returns empty dict)
+                if s2_data == "RATE_LIMITED":
+                    stats["skipped_rate_limit"] += 1
+                    logger.warning("Rate limited, stopping enrichment early")
+                    break
 
                 # Update paper with S2 ID
                 if not paper.semantic_scholar_id:
@@ -98,7 +110,7 @@ async def enrich_papers_with_semantic_scholar(
                     )
                     metrics.citation_velocity_7d = velocity
 
-                metrics.last_metrics_update = datetime.utcnow()
+                metrics.last_metrics_update = utcnow()
 
                 # Commit periodically to avoid large transactions
                 if stats["processed"] % 50 == 0:

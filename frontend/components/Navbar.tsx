@@ -3,9 +3,10 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Menu, X, LogIn, User } from 'lucide-react';
+import { Search, Menu, X, LogIn, User, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
+import { PaperSubmitModal } from './PaperSubmitModal';
 
 interface NavbarProps {
     onSearch?: (query: string) => void;
@@ -15,6 +16,7 @@ export function Navbar({ onSearch }: NavbarProps) {
     const router = useRouter();
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState('');
+    const [showSubmitModal, setShowSubmitModal] = React.useState(false);
     const { isAuthenticated, user, logout } = useAuthStore();
 
     const handleSearch = (e: React.FormEvent) => {
@@ -66,6 +68,15 @@ export function Navbar({ onSearch }: NavbarProps) {
                         >
                             Trending
                         </Link>
+                        
+                        {/* Submit Paper Button */}
+                        <button
+                            onClick={() => setShowSubmitModal(true)}
+                            className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Submit
+                        </button>
 
                         {isAuthenticated ? (
                             <div className="relative group">
@@ -120,6 +131,12 @@ export function Navbar({ onSearch }: NavbarProps) {
                         <div className="flex flex-col gap-2">
                             <Link href="/papers" className="py-2 text-sm font-medium">Papers</Link>
                             <Link href="/trending" className="py-2 text-sm font-medium">Trending</Link>
+                            <button 
+                                onClick={() => { setShowSubmitModal(true); setIsMenuOpen(false); }}
+                                className="py-2 text-left text-sm font-medium text-primary"
+                            >
+                                + Submit Paper
+                            </button>
                             {isAuthenticated ? (
                                 <>
                                     <Link href="/dashboard" className="py-2 text-sm font-medium">Dashboard</Link>
@@ -132,6 +149,15 @@ export function Navbar({ onSearch }: NavbarProps) {
                     </div>
                 )}
             </div>
+            
+            {/* Paper Submit Modal */}
+            <PaperSubmitModal 
+                isOpen={showSubmitModal} 
+                onClose={() => setShowSubmitModal(false)}
+                onSuccess={() => {
+                    // Optionally refresh papers list
+                }}
+            />
         </nav>
     );
 }

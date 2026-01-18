@@ -2,16 +2,21 @@
 User model and related tables.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import (
     Column, String, Text, DateTime, Boolean, ForeignKey, Index, JSON
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.models.paper import GUID  # Import the shared GUID type
+
+
+def utcnow():
+    """Get current UTC datetime (timezone-aware)."""
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -19,14 +24,14 @@ class User(Base):
     
     __tablename__ = "users"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     preferences = relationship("UserPreferences", back_populates="user", uselist=False)
@@ -38,10 +43,10 @@ class UserPreferences(Base):
     
     __tablename__ = "user_preferences"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID(), ForeignKey("users.id"), unique=True)
     
-    interested_categories = Column(ARRAY(String), default=[], nullable=False)
+    interested_categories = Column(JSON, default=[], nullable=False)  # JSON array for SQLite compatibility
     paper_maturity = Column(
         String(20), 
         default="all",
@@ -53,8 +58,8 @@ class UserPreferences(Base):
         nullable=False
     )  # "daily", "realtime"
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     user = relationship("User", back_populates="preferences")
@@ -65,9 +70,9 @@ class UserInteraction(Base):
     
     __tablename__ = "user_interactions"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
-    paper_id = Column(UUID(as_uuid=True), ForeignKey("papers.id"), index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID(), ForeignKey("users.id"), index=True)
+    paper_id = Column(GUID(), ForeignKey("papers.id"), index=True)
     
     interaction_type = Column(
         String(20), 
@@ -75,7 +80,7 @@ class UserInteraction(Base):
     )  # "view", "save", "read_summary", "compare"
     interaction_metadata = Column(JSON, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     
     # Relationships
     user = relationship("User", back_populates="interactions")

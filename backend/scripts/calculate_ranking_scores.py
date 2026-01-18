@@ -47,7 +47,7 @@ def calculate_paper_score(
         if has_implementations and metrics.github_stars > 0:
             impl_score = min(math.log10(metrics.github_stars + 1) / 4, 1.0) * 0.30  # Increased from 0.20
         elif has_implementations:
-        impl_score = 0.15
+            impl_score = 0.15
     else:
         velocity = 0.0
         citation_score = 0.0

@@ -16,56 +16,19 @@ import {
     Share2,
     Zap,
     Code,
+    ThumbsUp,
+    AlertTriangle,
+    Lightbulb,
+    Target,
+    FlaskConical,
+    Rocket,
+    AlertCircle,
+    Network,
 } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
-import { fetchPaperDetail, savePaper } from '@/lib/api';
+import { fetchPaperDetail, savePaper, type PaperDetail } from '@/lib/api';
 import { formatDate, getCategoryColor, formatAuthors } from '@/lib/utils';
-
-interface PaperMetrics {
-    citation_count: number;
-    citation_velocity_7d: number;
-    github_stars: number;
-    github_repos_count: number;
-    social_score: number;
-    overall_rank_score: number;
-}
-
-interface PaperSummary {
-    one_line_summary: string;
-    eli5?: string;
-    key_innovation?: string;
-    problem_statement?: string;
-    methodology?: string;
-    real_world_use_cases?: string;
-    limitations?: string;
-    results_summary?: string;
-}
-
-interface Implementation {
-    repo_url: string;
-    repo_name: string;
-    stars: number;
-    description: string;
-    language: string;
-}
-
-interface PaperDetail {
-    id: string;
-    arxiv_id: string;
-    title: string;
-    abstract: string;
-    authors: { name: string; affiliations: string[] }[];
-    published_date: string;
-    updated_date: string;
-    primary_category: string;
-    categories: string[];
-    pdf_url: string;
-    arxiv_url: string;
-    doi: string | null;
-    metrics: PaperMetrics | null;
-    summary: PaperSummary | null;
-    implementations: Implementation[];
-}
+import { Visualization3DButton } from '@/components/Visualization3DModal';
 
 export default function PaperDetailPage() {
     const params = useParams();
@@ -85,6 +48,7 @@ export default function PaperDetailPage() {
             try {
                 const data = await fetchPaperDetail(paperId);
                 setPaper(data);
+                console.log('Paper loaded:', data); // Debug
             } catch (err: any) {
                 console.error('Error loading paper:', err);
                 const msg = err.response?.data?.detail || 'Failed to load paper details.';
@@ -157,6 +121,7 @@ export default function PaperDetailPage() {
     }
 
     const categoryColor = getCategoryColor(paper.primary_category);
+    const hasSummary = !!paper.summary;
 
     return (
         <div className="min-h-screen bg-background">
@@ -252,7 +217,7 @@ export default function PaperDetailPage() {
                 )}
 
                 {/* AI Summary & Deep Dive */}
-                {paper.summary && (
+                {hasSummary ? (
                     <div className="space-y-6 mb-8">
                         {/* Quick Briefing */}
                         <div className="bg-gradient-to-br from-primary/10 to-purple-500/10 border border-primary/20 rounded-xl p-6">
@@ -266,7 +231,10 @@ export default function PaperDetailPage() {
 
                             {paper.summary.eli5 && (
                                 <div className="bg-background/50 rounded-lg p-4 mb-2">
-                                    <div className="text-sm font-semibold text-primary mb-1">Explain Like I'm 5</div>
+                                    <div className="text-sm font-semibold text-primary mb-1 flex items-center gap-2">
+                                        <Lightbulb className="w-4 h-4" />
+                                        Explain Like I'm 5
+                                    </div>
                                     <p className="text-foreground/90">{paper.summary.eli5}</p>
                                 </div>
                             )}
@@ -274,70 +242,120 @@ export default function PaperDetailPage() {
                             <div className="grid md:grid-cols-2 gap-4 mt-4">
                                 {paper.summary.problem_statement && (
                                     <div>
-                                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1">The Problem</div>
+                                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1 flex items-center gap-1">
+                                            <Target className="w-3 h-3" />
+                                            The Problem
+                                        </div>
                                         <p className="text-sm text-foreground/80">{paper.summary.problem_statement}</p>
                                     </div>
                                 )}
                                 {paper.summary.real_world_use_cases && (
                                     <div>
-                                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1">Use Cases</div>
-                                        <p className="text-sm text-foreground/80">{paper.summary.real_world_use_cases}</p>
+                                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1 flex items-center gap-1">
+                                            <Rocket className="w-3 h-3" />
+                                            Use Cases
+                                        </div>
+                                        <div className="text-sm text-foreground/80 whitespace-pre-line">
+                                            {paper.summary.real_world_use_cases}
+                                        </div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        {/* Technical Deep Dive */}
-                        <div className="grid md:grid-cols-2 gap-6">
-                            {paper.summary.methodology && (
-                                <div className="bg-card border border-border rounded-xl p-5">
-                                    <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-                                        <Code className="w-4 h-4 text-blue-500" />
-                                        Methodology
-                                    </h3>
-                                    <p className="text-sm text-muted-foreground leading-relaxed">
-                                        {paper.summary.methodology}
-                                    </p>
-                                </div>
-                            )}
-
-                            <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+                        {/* Innovation & Methodology */}
+                        {(paper.summary.key_innovation || paper.summary.methodology) && (
+                            <div className="grid md:grid-cols-2 gap-6">
                                 {paper.summary.key_innovation && (
-                                    <div>
-                                        <h3 className="font-semibold text-foreground mb-2 flex items-center gap-2">
+                                    <div className="bg-card border border-border rounded-xl p-5">
+                                        <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                                             <TrendingUp className="w-4 h-4 text-green-500" />
                                             Key Innovation
                                         </h3>
-                                        <p className="text-sm text-muted-foreground">
+                                        <p className="text-sm text-muted-foreground leading-relaxed">
                                             {paper.summary.key_innovation}
                                         </p>
                                     </div>
                                 )}
-                                {paper.summary.results_summary && (
-                                    <div>
-                                        <h3 className="font-semibold text-foreground mb-2 flex items-center gap-2">
-                                            <TrendingUp className="w-4 h-4 text-orange-500" />
-                                            Key Results
+
+                                {paper.summary.methodology && (
+                                    <div className="bg-card border border-border rounded-xl p-5">
+                                        <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                                            <FlaskConical className="w-4 h-4 text-blue-500" />
+                                            Methodology
                                         </h3>
-                                        <p className="text-sm text-muted-foreground">
-                                            {paper.summary.results_summary}
+                                        <p className="text-sm text-muted-foreground leading-relaxed">
+                                            {paper.summary.methodology}
                                         </p>
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        )}
 
-                        {/* Critical Analysis */}
-                        {paper.summary.limitations && (
-                            <div className="bg-orange-500/5 border border-orange-500/10 rounded-xl p-5">
-                                <h3 className="font-semibold text-orange-700 dark:text-orange-400 mb-2">
-                                    Limitations & Future Work
+                        {/* Results */}
+                        {paper.summary.results_summary && (
+                            <div className="bg-card border border-border rounded-xl p-5">
+                                <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                                    <TrendingUp className="w-4 h-4 text-orange-500" />
+                                    Key Results
                                 </h3>
-                                <p className="text-sm text-foreground/80 italic">
-                                    "{paper.summary.limitations}"
+                                <p className="text-sm text-muted-foreground">
+                                    {paper.summary.results_summary}
                                 </p>
                             </div>
                         )}
+
+                        {/* Pros and Cons */}
+                        {(paper.summary.pros || paper.summary.cons) && (
+                            <div className="grid md:grid-cols-2 gap-6">
+                                {/* Pros */}
+                                {paper.summary.pros && (
+                                    <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-5">
+                                        <h3 className="font-semibold text-green-700 dark:text-green-400 mb-3 flex items-center gap-2">
+                                            <ThumbsUp className="w-5 h-5" />
+                                            Advantages & Strengths
+                                        </h3>
+                                        <div className="text-sm text-foreground/80 whitespace-pre-line">
+                                            {paper.summary.pros}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Cons */}
+                                {paper.summary.cons && (
+                                    <div className="bg-orange-500/5 border border-orange-500/20 rounded-xl p-5">
+                                        <h3 className="font-semibold text-orange-700 dark:text-orange-400 mb-3 flex items-center gap-2">
+                                            <AlertTriangle className="w-5 h-5" />
+                                            Limitations & Challenges
+                                        </h3>
+                                        <div className="text-sm text-foreground/80 whitespace-pre-line">
+                                            {paper.summary.cons}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Limitations / Future Work */}
+                        {paper.summary.limitations && (
+                            <div className="bg-orange-500/5 border border-orange-500/10 rounded-xl p-5">
+                                <h3 className="font-semibold text-orange-700 dark:text-orange-400 mb-2 flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4" />
+                                    Limitations & Future Work
+                                </h3>
+                                <p className="text-sm text-foreground/80">
+                                    {paper.summary.limitations}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="bg-card border border-border rounded-xl p-6 mb-8">
+                        <p className="text-muted-foreground text-center">
+                            🤖 AI summary not yet generated for this paper. 
+                            <br />
+                            <span className="text-sm">It will be available soon!</span>
+                        </p>
                     </div>
                 )}
 
@@ -407,6 +425,13 @@ export default function PaperDetailPage() {
                         <ExternalLink className="w-4 h-4" />
                         View on arXiv
                     </a>
+                    
+                    <Visualization3DButton 
+                        paperId={paper.id}
+                        paperTitle={paper.title}
+                        className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 transition-all shadow-lg"
+                    />
+                    
                     <button
                         onClick={handleSave}
                         className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors ${saved
